@@ -1,0 +1,7 @@
+checked_through = "2026-10-16"
+
+[[reset]]
+framework = "proa"
+event = "framework-registry-release"
+approval = "approved"
+note = "crates.io 2026-10-12"

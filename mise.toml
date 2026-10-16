@@ -1,0 +1,20 @@
+[tools]
+rust = { version = "nightly-2026-10-16", components = "rustfmt,clippy", profile = "minimal" }
+"aqua:svenstaro/miniserve" = "0.35.0"
+
+[tasks.build]
+run = "cargo run --release -- build"
+
+[tasks.serve]
+depends = ["build"]
+run = "miniserve dist --index index.html --interfaces 127.0.0.1 --port ${PORT:-8080}"
+
+[tasks.import]
+usage = 'arg "<catalog>"'
+run = 'cargo run --release -- import "$usage_catalog"'
+
+[tasks.discover]
+run = "cargo run --release -- discover"
+
+[tasks.lint]
+run = ["cargo fmt --check", "cargo clippy --all-targets -- -D warnings"]
