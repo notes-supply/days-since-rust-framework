@@ -36,7 +36,7 @@ jobs:
       - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
         if: steps.binary.outputs.cache-hit != 'true'
         with:
-          version: 2026.10.12
+          version: 2026.10.17
           install_args: rust
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         if: steps.binary.outputs.cache-hit != 'true'
@@ -54,8 +54,15 @@ jobs:
           key: ${{ steps.binary.outputs.cache-primary-key }}
       - name: Build production site
         run: target/release/days-since-rust-framework build --production
+      - name: Set up patched Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Install locked deployment dependencies
+        run: npm ci --ignore-scripts
       - name: Deploy
-        run: npx --yes wrangler@4.151.1 deploy
+        run: npm exec --no -- wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

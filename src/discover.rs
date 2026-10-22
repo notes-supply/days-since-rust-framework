@@ -209,15 +209,66 @@ impl<'a> Candidates<'a> {
         }).collect())
     }
 }
-pub fn run(history: &History, since: Date) -> (Value, bool) {
-    let agent: ureq::Agent = ureq::Agent::config_builder()
+fn http_agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
         .user_agent(
             "dayssincelastrustframework-discovery (+https://dayssincelastrustframework.com)",
         )
         .timeout_global(Some(Duration::from_secs(30)))
         .max_redirects(0)
         .build()
-        .into();
+        .into()
+}
+
+#[test]
+#[ignore = "contacts public TLS fixtures; run explicitly with --ignored --nocapture"]
+fn incident_tls_chains_are_rejected() -> Result<()> {
+    let agent = http_agent();
+    let mut response = agent.get("https://example.com/").call()?;
+    ensure!(response.status().is_success());
+    ensure!(!response.body_mut().read_to_string()?.is_empty());
+    println!("valid-control: HTTP success and response body read");
+    let mut rejected = 0;
+    for name in ["dv-g3b", "dv-g3c", "ov-g3b", "ov-g3c", "ev-g3b", "ev-g3c"] {
+        for suffix in ["", "-aaa"] {
+            let url = format!("https://{name}{suffix}-emudhra.we-have-a-problem.com/");
+            let error = agent
+                .get(&url)
+                .call()
+                .err()
+                .context("compromised chain accepted")?;
+            let diagnostic = format!("{error:?}");
+            ensure!(
+                diagnostic.to_lowercase().contains("certificate"),
+                "not a certificate rejection: {url}: {diagnostic}"
+            );
+            println!("{url}: {diagnostic}");
+            rejected += 1;
+        }
+    }
+    ensure!(rejected == 12);
+    for url in [
+        "https://wrong.host.badssl.com/",
+        "https://self-signed.badssl.com/",
+    ] {
+        let error = agent
+            .get(url)
+            .call()
+            .err()
+            .context("invalid control accepted")?;
+        let diagnostic = format!("{error:?}");
+        ensure!(
+            diagnostic.to_lowercase().contains("certificate"),
+            "not a certificate rejection: {url}: {diagnostic}"
+        );
+        println!("{url}: {diagnostic}");
+    }
+    println!("incident certificate rejections: {rejected}/12; invalid controls: 2/2");
+    Ok(())
+}
+
+pub fn run(history: &History, since: Date) -> (Value, bool) {
+    let agent = http_agent();
     let mut candidates = Candidates::new(history);
     let mut sources = Vec::new();
     let mut last: Option<Instant> = None;
