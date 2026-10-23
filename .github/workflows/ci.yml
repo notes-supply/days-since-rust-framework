@@ -1,0 +1,38 @@
+name: CI
+on:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+        with:
+          version: 2026.10.17
+          install_args: --locked rust
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm audit --audit-level=high
+      - run: mise exec rust -- cargo test --locked
+      - run: mise exec rust -- cargo clippy --locked --all-targets -- -D warnings
+      - name: Prepare site font
+        run: |
+          if [ ! -s /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf ]; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y fonts-dejavu-core
+          fi
+          test -s /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf
+      - run: mise exec rust -- cargo run --locked -- build --production
+      - run: npm exec --no -- wrangler deploy --dry-run
+        env:
+          WRANGLER_SEND_METRICS: "false"
