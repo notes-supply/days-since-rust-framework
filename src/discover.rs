@@ -209,15 +209,19 @@ impl<'a> Candidates<'a> {
         }).collect())
     }
 }
-pub fn run(history: &History, since: Date) -> (Value, bool) {
-    let agent: ureq::Agent = ureq::Agent::config_builder()
+fn http_agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
         .user_agent(
             "dayssincelastrustframework-discovery (+https://dayssincelastrustframework.com)",
         )
         .timeout_global(Some(Duration::from_secs(30)))
         .max_redirects(0)
         .build()
-        .into();
+        .into()
+}
+
+pub fn run(history: &History, since: Date) -> (Value, bool) {
+    let agent = http_agent();
     let mut candidates = Candidates::new(history);
     let mut sources = Vec::new();
     let mut last: Option<Instant> = None;
@@ -273,4 +277,65 @@ pub fn run(history: &History, since: Date) -> (Value, bool) {
         json!({"ran_at":Timestamp::now(), "since":since, "sources":sources, "candidates":candidates.finish()}),
         failed,
     )
+}
+
+#[cfg(test)]
+mod tls_tests {
+    use super::*;
+
+    fn assert_certificate_rejected(agent: &ureq::Agent, url: &str, reason: &str) -> Result<()> {
+        let error = agent
+            .get(url)
+            .call()
+            .err()
+            .context("invalid certificate accepted")?;
+        let diagnostic = format!("{error:?}");
+        ensure!(
+            diagnostic.contains(reason),
+            "expected {reason} for {url}, received {diagnostic}"
+        );
+        println!("{url}: {diagnostic}");
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "contacts public TLS fixtures; run explicitly with --ignored --nocapture"]
+    fn incident_tls_chains_are_rejected() -> Result<()> {
+        let agent = http_agent();
+        let mut response = agent.get("https://example.com/").call()?;
+        ensure!(response.status().is_success());
+        ensure!(!response.body_mut().read_to_string()?.is_empty());
+        println!("valid-control: HTTP success and response body read");
+        let hosts = [
+            "dv-g3b",
+            "dv-g3b-aaa",
+            "dv-g3c",
+            "dv-g3c-aaa",
+            "ov-g3b",
+            "ov-g3b-aaa",
+            "ov-g3c",
+            "ov-g3c-aaa",
+            "ev-g3b",
+            "ev-g3b-aaa",
+            "ev-g3c",
+            "ev-g3c-aaa",
+            "dv-g3b-noct",
+            "dv-g3b-aaa-noct",
+        ];
+        for host in hosts {
+            let url = format!("https://{host}-emudhra.we-have-a-problem.com/");
+            assert_certificate_rejected(&agent, &url, "CertDistrusted")?;
+        }
+        for (url, reason) in [
+            ("https://wrong.host.badssl.com/", "NotValidForName"),
+            ("https://self-signed.badssl.com/", "UnknownIssuer"),
+        ] {
+            assert_certificate_rejected(&agent, url, reason)?;
+        }
+        println!(
+            "incident certificate rejections: {0}/{0}; invalid controls: 2/2",
+            hosts.len()
+        );
+        Ok(())
+    }
 }
